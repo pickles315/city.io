@@ -1,221 +1,291 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>WebGL Test</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My City Builder</title>
 
-    <style>
-        html, body {
-            margin: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #222;
-            font-family: Arial;
-        }
+<style>
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #87ceeb;
+}
 
-        canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
+canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
 
-        #status {
-            position: fixed;
-            top: 15px;
-            left: 15px;
-            padding: 15px;
-            background: black;
-            color: white;
-            font-size: 18px;
-            z-index: 10;
-            border-radius: 8px;
-            white-space: pre-line;
-        }
-    </style>
+#ui {
+    position: fixed;
+    top: 15px;
+    left: 15px;
+    padding: 12px 16px;
+    background: rgba(0,0,0,.75);
+    color: white;
+    font-family: Arial, sans-serif;
+    border-radius: 8px;
+}
+</style>
 </head>
 
 <body>
 
-<div id="status">Starting WebGL...</div>
+<div id="ui">
+    🏙️ My City Builder
+</div>
+
 <canvas id="canvas"></canvas>
 
 <script>
-const status = document.getElementById("status");
 const canvas = document.getElementById("canvas");
+const gl = canvas.getContext("webgl");
 
-function show(text) {
-    status.textContent = text;
+if (!gl) {
+    document.getElementById("ui").textContent =
+        "❌ WebGL is not available";
+    throw new Error("WebGL unavailable");
 }
 
-try {
 
-    show("Creating WebGL context...");
+/* SHADERS */
 
-    const gl = canvas.getContext("webgl");
+const vertexShaderSource = `
+attribute vec3 position;
 
-    if (!gl) {
-        show(
-            "❌ WEBGL FAILED\n\n" +
-            "ChromeOS/Chrome did not provide WebGL."
-        );
+uniform float rotation;
 
-        throw new Error("WebGL unavailable");
-    }
+void main() {
 
-    show("✅ WebGL works!\n\nCreating shader...");
+    float c = cos(rotation);
+    float s = sin(rotation);
 
-    const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+    float x = position.x * c - position.z * s;
+    float z = position.x * s + position.z * c;
 
-    gl.shaderSource(vertexShader, `
-        attribute vec3 position;
+    gl_Position = vec4(
+        x * 0.35,
+        position.y * 0.35,
+        z * 0.15 - 0.4,
+        1.0
+    );
+}
+`;
 
-        void main() {
-            gl_Position = vec4(position, 1.0);
-        }
-    `);
+const fragmentShaderSource = `
+precision mediump float;
 
-    gl.compileShader(vertexShader);
+void main() {
+    gl_FragColor = vec4(
+        0.2,
+        0.8,
+        0.35,
+        1.0
+    );
+}
+`;
 
-    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
-        show(
-            "❌ VERTEX SHADER ERROR\n\n" +
-            gl.getShaderInfoLog(vertexShader)
-        );
 
-        throw new Error("Vertex shader failed");
-    }
+function createShader(type, source) {
 
-    show("✅ WebGL works!\n\nVertex shader works!\n\nCreating fragment shader...");
+    const shader = gl.createShader(type);
 
-    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
 
-    gl.shaderSource(fragmentShader, `
-        precision mediump float;
+    return shader;
+}
 
-        void main() {
-            gl_FragColor = vec4(1.0, 0.2, 0.1, 1.0);
-        }
-    `);
 
-    gl.compileShader(fragmentShader);
-
-    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-        show(
-            "❌ FRAGMENT SHADER ERROR\n\n" +
-            gl.getShaderInfoLog(fragmentShader)
-        );
-
-        throw new Error("Fragment shader failed");
-    }
-
-    show("✅ WebGL works!\n\nShaders work!\n\nCreating triangle...");
-
-    const program = gl.createProgram();
-
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-
-    gl.linkProgram(program);
-
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        show(
-            "❌ PROGRAM LINK ERROR\n\n" +
-            gl.getProgramInfoLog(program)
-        );
-
-        throw new Error("Program failed");
-    }
-
-    gl.useProgram(program);
-
-    const vertices = new Float32Array([
-         0.0,  0.7, 0.0,
-        -0.7, -0.7, 0.0,
-         0.7, -0.7, 0.0
-    ]);
-
-    const buffer = gl.createBuffer();
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(
-        gl.ARRAY_BUFFER,
-        vertices,
-        gl.STATIC_DRAW
+const vertexShader =
+    createShader(
+        gl.VERTEX_SHADER,
+        vertexShaderSource
     );
 
-    const position =
-        gl.getAttribLocation(program, "position");
+const fragmentShader =
+    createShader(
+        gl.FRAGMENT_SHADER,
+        fragmentShaderSource
+    );
 
-    gl.enableVertexAttribArray(position);
 
-    gl.vertexAttribPointer(
-        position,
-        3,
-        gl.FLOAT,
-        false,
+const program = gl.createProgram();
+
+gl.attachShader(program, vertexShader);
+gl.attachShader(program, fragmentShader);
+
+gl.linkProgram(program);
+
+gl.useProgram(program);
+
+
+/* CUBE */
+
+const vertices = new Float32Array([
+
+    // Front
+    -1,-1, 1,
+     1,-1, 1,
+     1, 1, 1,
+
+    -1,-1, 1,
+     1, 1, 1,
+    -1, 1, 1,
+
+    // Back
+    -1,-1,-1,
+    -1, 1,-1,
+     1, 1,-1,
+
+    -1,-1,-1,
+     1, 1,-1,
+     1,-1,-1,
+
+    // Left
+    -1,-1,-1,
+    -1,-1, 1,
+    -1, 1, 1,
+
+    -1,-1,-1,
+    -1, 1, 1,
+    -1, 1,-1,
+
+    // Right
+     1,-1,-1,
+     1, 1,-1,
+     1, 1, 1,
+
+     1,-1,-1,
+     1, 1, 1,
+     1,-1, 1,
+
+    // Top
+    -1, 1,-1,
+    -1, 1, 1,
+     1, 1, 1,
+
+    -1, 1,-1,
+     1, 1, 1,
+     1, 1,-1,
+
+    // Bottom
+    -1,-1,-1,
+     1,-1,-1,
+     1,-1, 1,
+
+    -1,-1,-1,
+     1,-1, 1,
+    -1,-1, 1
+]);
+
+
+const buffer = gl.createBuffer();
+
+gl.bindBuffer(
+    gl.ARRAY_BUFFER,
+    buffer
+);
+
+gl.bufferData(
+    gl.ARRAY_BUFFER,
+    vertices,
+    gl.STATIC_DRAW
+);
+
+
+const position =
+    gl.getAttribLocation(
+        program,
+        "position"
+    );
+
+gl.enableVertexAttribArray(position);
+
+gl.vertexAttribPointer(
+    position,
+    3,
+    gl.FLOAT,
+    false,
+    0,
+    0
+);
+
+
+const rotation =
+    gl.getUniformLocation(
+        program,
+        "rotation"
+    );
+
+
+/* RESIZE */
+
+function resize() {
+
+    const dpr =
+        window.devicePixelRatio || 1;
+
+    canvas.width =
+        window.innerWidth * dpr;
+
+    canvas.height =
+        window.innerHeight * dpr;
+
+    gl.viewport(
         0,
-        0
+        0,
+        canvas.width,
+        canvas.height
     );
-
-    function resize() {
-        const dpr = window.devicePixelRatio || 1;
-
-        canvas.width =
-            window.innerWidth * dpr;
-
-        canvas.height =
-            window.innerHeight * dpr;
-
-        gl.viewport(
-            0,
-            0,
-            canvas.width,
-            canvas.height
-        );
-    }
-
-    window.addEventListener("resize", resize);
-
-    resize();
-
-    function render() {
-
-        gl.clearColor(
-            0.05,
-            0.1,
-            0.2,
-            1
-        );
-
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        gl.drawArrays(
-            gl.TRIANGLES,
-            0,
-            3
-        );
-
-        requestAnimationFrame(render);
-    }
-
-    show(
-        "🟢 WEBGL IS WORKING!\n\n" +
-        "You should see a RED triangle.\n\n" +
-        "If you see this message + triangle,\n" +
-        "your Chromebook is NOT the problem."
-    );
-
-    render();
-
-} catch (error) {
-
-    show(
-        "❌ SOMETHING FAILED\n\n" +
-        error.message
-    );
-
 }
+
+window.addEventListener(
+    "resize",
+    resize
+);
+
+resize();
+
+
+/* RENDER */
+
+let angle = 0;
+
+function render() {
+
+    angle += 0.01;
+
+    gl.clearColor(
+        0.45,
+        0.65,
+        0.85,
+        1
+    );
+
+    gl.clear(
+        gl.COLOR_BUFFER_BIT
+    );
+
+    gl.uniform1f(
+        rotation,
+        angle
+    );
+
+    gl.drawArrays(
+        gl.TRIANGLES,
+        0,
+        vertices.length / 3
+    );
+
+    requestAnimationFrame(render);
+}
+
+render();
 </script>
 
 </body>
